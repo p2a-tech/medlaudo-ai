@@ -28,7 +28,8 @@ from sqlalchemy.orm import Session
 
 from .auditoria.registro import registrar
 from .auth.seguranca import conferir_senha, criar_token, get_medico_atual
-from .db import Exame, Medico, SessionLocal, StatusExame, init_db
+from .db import Exame, EstadoOrthanc, Medico, SessionLocal, StatusExame, init_db
+from .dicom.orthanc import OrthancClient, poll_ligado
 from .dicom.processamento import processar_dicom
 from .inference.client import MedGemmaClient
 from .inference.schema import Laudo, extrair_criticos
@@ -103,6 +104,50 @@ async def _worker() -> None:
             _fila.task_done()
 
 
+async def _poll_uma_vez(client: OrthancClient, db: Session) -> int:
+    """Processa uma rodada de mudanças do Orthanc. Retorna nº de exames novos.
+
+    Separada do loop para ser testável sem rede nem espera. Idempotente: avança
+    o `ultimo_seq` e faz dedup por SOPInstanceUID no `_ingerir`.
+    """
+    estado = db.get(EstadoOrthanc, 1)
+    if not estado:
+        estado = EstadoOrthanc(id=1, ultimo_seq=0)
+        db.add(estado)
+        db.commit()
+
+    mudancas = await client.get_changes(estado.ultimo_seq, 50)
+    novos = 0
+    for ch in mudancas.get("Changes", []):
+        if ch.get("ChangeType") == "NewInstance" and ch.get("ResourceType") == "Instance":
+            try:
+                dados = await client.get_instance_file(ch["ID"])
+                _, novo = await _ingerir(dados, db)
+                novos += int(novo)
+            except Exception as exc:  # noqa: BLE001 — um item ruim não para o poller
+                print(f"[orthanc] falha ao ingerir instância {ch.get('ID')}: {exc}")
+    estado.ultimo_seq = mudancas.get("Last", estado.ultimo_seq)
+    db.commit()
+    return novos
+
+
+async def _poller_orthanc() -> None:
+    """Loop de polling do Orthanc."""
+    client = OrthancClient()
+    intervalo = float(os.getenv("ORTHANC_POLL_INTERVALO", "10"))
+    while True:
+        await asyncio.sleep(intervalo)
+        db = SessionLocal()
+        try:
+            n = await _poll_uma_vez(client, db)
+            if n:
+                print(f"[orthanc] {n} exame(s) novo(s) ingerido(s)")
+        except Exception as exc:  # noqa: BLE001 — poller não pode morrer
+            print(f"[orthanc] erro no polling: {exc}")
+        finally:
+            db.close()
+
+
 @app.on_event("startup")
 async def _startup() -> None:
     init_db()
@@ -110,6 +155,8 @@ async def _startup() -> None:
     if not INFERENCIA_SINCRONA:
         _fila = asyncio.Queue()
         asyncio.create_task(_worker())
+    if poll_ligado():
+        asyncio.create_task(_poller_orthanc())
 
 
 @app.get("/saude")
@@ -139,18 +186,22 @@ def login(dados: LoginEntrada, db: Session = Depends(get_db)) -> dict:
     }
 
 
-@app.post("/exames")
-async def criar_exame(arquivo: UploadFile, db: Session = Depends(get_db)) -> dict:
-    """Recebe um DICOM, processa e gera o rascunho de laudo com a IA."""
-    conteudo = await arquivo.read()
-    try:
-        exame_dcm = processar_dicom(conteudo)
-    except Exception as exc:  # noqa: BLE001 — superfície de entrada hostil
-        raise HTTPException(status_code=400, detail=f"DICOM inválido: {exc}")
+async def _ingerir(conteudo: bytes, db: Session) -> tuple[Exame, bool]:
+    """Processa um DICOM e o injeta no pipeline (de-id -> fila/inline).
+
+    Compartilhada pelo upload manual e pelo poller do Orthanc. Faz dedup por
+    SOPInstanceUID — o mesmo exame nunca é processado duas vezes. Retorna
+    (registro, novo?). Lança em DICOM inválido.
+    """
+    exame_dcm = processar_dicom(conteudo)
+
+    existente = db.scalar(
+        select(Exame).where(Exame.sop_instance_uid == exame_dcm.sop_instance_uid)
+    )
+    if existente:
+        return existente, False
 
     exame_id = str(uuid.uuid4())
-    # Guarda a imagem de-identificada para o viewer (no MVP, no próprio registro
-    # via base64; em produção, no Orthanc/objeto). Mantido simples aqui.
     registro = Exame(
         id=exame_id,
         study_instance_uid=exame_dcm.study_instance_uid,
@@ -160,27 +211,35 @@ async def criar_exame(arquivo: UploadFile, db: Session = Depends(get_db)) -> dic
         status=StatusExame.aguardando.value,
     )
     db.add(registro)
-    # Guarda a imagem para o viewer/inferência (no MVP, em memória; em produção,
-    # no Orthanc/objeto). Disponível antes de enfileirar.
+    # Imagem de-identificada para viewer/inferência (no MVP em memória).
     _IMAGENS[exame_id] = exame_dcm.imagem_png_b64
     db.commit()
     registrar(db, exame_id, "dicom_recebido", detalhe=exame_dcm.modalidade)
 
     if INFERENCIA_SINCRONA:
-        # Modo determinístico (testes): processa inline e devolve o rascunho.
         await _processar_inferencia(exame_id)
         db.refresh(registro)
-        return {
-            "id": exame_id,
-            "status": registro.status,
-            "critico": registro.critico,
-            "laudo": registro.laudo_ia,
-        }
+    else:
+        assert _fila is not None
+        await _fila.put(exame_id)
+    return registro, True
 
-    # Modo assíncrono (produção): enfileira e responde já, sem bloquear o upload.
-    assert _fila is not None
-    await _fila.put(exame_id)
-    return {"id": exame_id, "status": registro.status, "critico": False, "laudo": None}
+
+@app.post("/exames")
+async def criar_exame(arquivo: UploadFile, db: Session = Depends(get_db)) -> dict:
+    """Upload manual de um DICOM (o caminho normal é via Orthanc)."""
+    conteudo = await arquivo.read()
+    try:
+        registro, _ = await _ingerir(conteudo, db)
+    except Exception as exc:  # noqa: BLE001 — superfície de entrada hostil
+        raise HTTPException(status_code=400, detail=f"DICOM inválido: {exc}")
+
+    return {
+        "id": registro.id,
+        "status": registro.status,
+        "critico": registro.critico,
+        "laudo": registro.laudo_ia,
+    }
 
 
 @app.get("/exames")

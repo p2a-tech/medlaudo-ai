@@ -93,5 +93,15 @@ class Auditoria(Base):
     em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_agora)
 
 
+class EstadoOrthanc(Base):
+    """Único registro (id=1) com o último Seq de /changes já processado,
+    para o poller retomar sem reprocessar após restart."""
+
+    __tablename__ = "estado_orthanc"
+
+    id: Mapped[int] = mapped_column(primary_key=True, default=1)
+    ultimo_seq: Mapped[int] = mapped_column(default=0)
+
+
 def init_db() -> None:
     Base.metadata.create_all(engine)

@@ -95,9 +95,19 @@ seguida — o upload nunca trava esperando a GPU. A worklist faz polling e mostr
 o exame virar `rascunho_pronto`. Para um modo determinístico (testes), use
 `INFERENCIA_SINCRONA=1` (processa inline e devolve o rascunho na resposta).
 
+## Worklist automática (Orthanc)
+
+O caminho normal não tem upload manual: o equipamento envia o DICOM ao Orthanc
+(C-STORE) e um **poller** observa a API `/changes` do Orthanc, puxa cada
+instância nova e a injeta no pipeline (de-id → fila → MedGemma). O último `Seq`
+processado fica persistido (`EstadoOrthanc`) para retomar após restart sem
+reprocessar, e há **dedup por SOPInstanceUID**. Ligado por `ORTHANC_POLL=1`
+(default na stack Docker). O upload manual continua disponível como alternativa.
+
 ## Fluxo de uso
 
-1. Equipamento envia DICOM ao Orthanc (ou faça upload pela web — "+ Enviar DICOM").
+1. Equipamento envia DICOM ao Orthanc → o poller ingere automaticamente
+   (ou faça upload pela web — "+ Enviar DICOM").
 2. A API de-identifica, converte a imagem e pede o rascunho ao MedGemma.
 3. O radiologista abre a worklist (críticos no topo), revê imagem + achados,
    e **assina** ou **rejeita**.
@@ -162,9 +172,9 @@ Política de decisão: em achados críticos, `indeterminado` conta como POSITIVO
 - [x] Worker assíncrono (fila em processo) para inferência
 - [x] Autenticação de médicos (JWT) + CRM no laudo assinado
 - [ ] Rodar o MedGemma real em GPU e medir contra dataset anotado
+- [x] Worklist automática via poller do Orthanc (sem upload manual) + dedup
 - [ ] Grounding por recuperação de casos similares (MedSigLIP)
 - [ ] Captura de correções → fine-tuning local (LoRA)
-- [ ] Integração de worklist direto do Orthanc (sem upload manual)
 - [ ] Assinatura digital com certificado ICP-Brasil
 
 ## Aviso

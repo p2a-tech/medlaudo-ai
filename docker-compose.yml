@@ -46,6 +46,10 @@ services:
       # Autenticação JWT — TROCAR o segredo em produção.
       JWT_SECRET: ${JWT_SECRET:-troque-este-segredo}
       JWT_EXPIRA_HORAS: "12"
+      # Worklist automática: puxa exames novos do Orthanc (sem upload manual).
+      ORTHANC_POLL: "1"
+      ORTHANC_URL: http://orthanc:8042
+      ORTHANC_POLL_INTERVALO: "10"
       # Envio automático do laudo assinado ao PACS (Orthanc) via C-STORE.
       PACS_ENVIO_AUTO: "1"
       PACS_HOST: orthanc
