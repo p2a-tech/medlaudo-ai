@@ -100,8 +100,39 @@ body {
 
 .acoes { display: flex; gap: 10px; margin-top: 22px; }
 .btn { border: none; border-radius: 8px; padding: 10px 16px; font-weight: 600; cursor: pointer; font-size: 14px; }
+.btn:disabled { opacity: 0.5; cursor: default; }
 .btn-primario { background: var(--primario); color: #04201c; }
 .btn-secundario { background: var(--painel-2); color: var(--texto); border: 1px solid var(--borda); }
+.btn-perigo { background: transparent; color: var(--critico); border: 1px solid var(--critico); }
 .upload { display: inline-flex; align-items: center; }
+
+/* Editor campo a campo */
+.qt-edit { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.check { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; color: var(--texto-fraco); }
+
+.achado-edit { border: 1px solid var(--borda); border-radius: 8px; padding: 8px 10px; margin-bottom: 6px; background: var(--painel-2); }
+.achado-edit.ativo { border-color: #34506a; }
+.achado-edit-topo { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.achado-nome { font-size: 14px; font-weight: 500; display: flex; align-items: center; gap: 6px; }
+.tag-editado { color: var(--alerta); font-size: 11px; }
+.achado-edit-campos { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 8px; }
+.achado-edit-campos .inp { grid-column: 1 / -1; }
+
+.sel, .inp, .txt {
+  background: var(--bg);
+  border: 1px solid var(--borda);
+  color: var(--texto);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 13px;
+  font-family: inherit;
+}
+.sel { cursor: pointer; }
+.sel-presente { border-color: #3f5f7d; }
+.sel-indeterminado { border-color: var(--alerta); }
+.sel-critico { border-color: var(--critico); color: var(--critico); }
+.txt { width: 100%; resize: vertical; }
+.nota-ia { font-size: 12px; color: var(--texto-fraco); margin-top: 10px; }
+.nota-ia::first-letter { color: var(--alerta); }
 
 .vazio { color: var(--texto-fraco); font-size: 14px; }

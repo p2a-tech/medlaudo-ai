@@ -17,3 +17,6 @@ dist/
 # Dados / DICOM de teste — nunca versionar imagem de paciente
 *.dcm
 dados/
+
+# Artefatos de teste
+teste_*.db

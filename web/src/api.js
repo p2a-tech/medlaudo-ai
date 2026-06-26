@@ -16,6 +16,12 @@ export const api = {
     fd.append("arquivo", arquivo);
     return fetch(`${BASE}/exames`, { method: "POST", body: fd }).then(json);
   },
+  editarLaudo: (id, laudo, medico) =>
+    fetch(`${BASE}/exames/${id}/laudo?medico=${encodeURIComponent(medico)}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(laudo),
+    }).then(json),
   assinar: (id, medico) =>
     fetch(`${BASE}/exames/${id}/assinar?medico=${encodeURIComponent(medico)}`, {
       method: "POST",

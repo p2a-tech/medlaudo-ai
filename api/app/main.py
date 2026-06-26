@@ -27,7 +27,7 @@ from .auditoria.registro import registrar
 from .db import Exame, SessionLocal, StatusExame, init_db
 from .dicom.processamento import processar_dicom
 from .inference.client import MedGemmaClient
-from .inference.schema import Laudo
+from .inference.schema import Laudo, extrair_criticos
 
 app = FastAPI(title="MedLaudo-AI", version="0.1.0")
 
@@ -157,16 +157,23 @@ def obter_imagem(exame_id: str) -> Response:
 def editar_laudo(
     exame_id: str, laudo: Laudo, medico: str = "medico", db: Session = Depends(get_db)
 ) -> dict:
-    """Salva edições do médico (sem assinar)."""
+    """Salva edições do médico (sem assinar).
+
+    Recalcula a criticidade a partir dos achados editados — se o médico
+    adicionar/remover um achado crítico, a prioridade da worklist acompanha.
+    A regra continua determinística e em código.
+    """
     e = db.get(Exame, exame_id)
     if not e:
         raise HTTPException(status_code=404, detail="Exame não encontrado")
+    laudo.achados_criticos = extrair_criticos(laudo.achados)
     e.laudo_final = laudo.model_dump()
+    e.critico = len(laudo.achados_criticos) > 0
     e.medico_responsavel = medico
     e.status = StatusExame.em_revisao.value
     db.commit()
     registrar(db, exame_id, "laudo_editado", ator=medico)
-    return {"ok": True}
+    return {"ok": True, "achados_criticos": laudo.achados_criticos}
 
 
 @app.post("/exames/{exame_id}/assinar")
@@ -178,7 +185,9 @@ def assinar_laudo(
     if not e:
         raise HTTPException(status_code=404, detail="Exame não encontrado")
     # Se o médico não editou, parte do rascunho da IA como base.
-    final = e.laudo_final or e.laudo_ia or {}
+    # Cria um NOVO dict: reatribuir a mesma referência não marca a coluna JSON
+    # como suja no SQLAlchemy (mutação in-place não é detectada).
+    final = dict(e.laudo_final or e.laudo_ia or {})
     final["validado_por_medico"] = True
     e.laudo_final = final
     e.medico_responsavel = medico
