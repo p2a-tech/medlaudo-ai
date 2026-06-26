@@ -80,11 +80,35 @@ npm run dev   # http://localhost:5173
    e **assina** ou **rejeita**.
 4. Cada ação fica registrada na auditoria e nas métricas (`GET /metricas`).
 
+## Avaliação de qualidade (harness)
+
+Antes de confiar o MedGemma a uma clínica, é preciso **medir** a qualidade dos
+achados contra um conjunto anotado por especialista. O harness em
+`api/app/avaliacao/` faz isso.
+
+1. Monte um manifesto JSON (veja `app/avaliacao/exemplo_manifesto.json`):
+   cada item aponta uma imagem (`.dcm`/`.png`/`.jpg`) e os achados reais.
+2. Rode (sem `MEDGEMMA_BASE_URL` usa o mock; com ela, mede o modelo real):
+
+```bash
+cd api
+python -m app.avaliacao.executar caminho/do/manifesto.json --saida resultado.json
+```
+
+Saída: tabela por achado com **sensibilidade** e **especificidade** (críticos no
+topo), agregados gerais e de críticos, e a lista de **achados críticos perdidos**
+(falsos negativos em pneumotórax/derrame) — o erro que mais importa evitar.
+
+Política de decisão: em achados críticos, `indeterminado` conta como POSITIVO
+(na dúvida, sinaliza ao médico); em não-críticos, conta como negativo.
+
 ## Roadmap
 
 - [x] Edição campo a campo do laudo na web
 - [x] Geração de PDF + DICOM (Encapsulated PDF) do laudo final
 - [x] Envio automático do laudo ao PACS na assinatura (C-STORE) + reenvio manual
+- [x] Harness de avaliação (sensibilidade/especificidade por achado, foco em críticos)
+- [ ] Rodar o MedGemma real em GPU e medir contra dataset anotado
 - [ ] Worker assíncrono (fila) para inferência em vez de síncrono
 - [ ] Grounding por recuperação de casos similares (MedSigLIP)
 - [ ] Captura de correções → fine-tuning local (LoRA)

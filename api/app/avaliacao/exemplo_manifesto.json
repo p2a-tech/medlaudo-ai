@@ -1,0 +1,14 @@
+[
+  {
+    "imagem": "casos/caso001.dcm",
+    "achados": { "derrame_pleural": true }
+  },
+  {
+    "imagem": "casos/caso002.dcm",
+    "achados": { "pneumotorax": true, "atelectasia": true }
+  },
+  {
+    "imagem": "casos/caso003.dcm",
+    "achados": {}
+  }
+]
