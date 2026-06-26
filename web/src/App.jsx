@@ -506,7 +506,7 @@ export default function App() {
 
       {!online && <StatusOffline />}
 
-      <main className="layout">
+      <main className={`layout ${selecionado ? "com-selecao" : ""}`}>
         <aside className="worklist">
           <h2>Worklist</h2>
           {exames.length === 0 && <p className="vazio">Nenhum exame ainda.</p>}
@@ -530,7 +530,14 @@ export default function App() {
           </ul>
         </aside>
 
-        <Detalhe id={selecionado} onMudou={carregar} />
+        <div className="painel-detalhe">
+          {selecionado && (
+            <button className="voltar-mobile" onClick={() => setSelecionado(null)}>
+              ← Worklist
+            </button>
+          )}
+          <Detalhe id={selecionado} onMudou={carregar} />
+        </div>
       </main>
     </div>
   );

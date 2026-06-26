@@ -69,8 +69,23 @@ body {
 .item-status { font-size: 12px; color: var(--texto-fraco); margin-top: 4px; }
 .item-id { font-size: 11px; color: #51647a; font-family: monospace; }
 
-.detalhe { display: grid; grid-template-columns: 1fr 420px; overflow: hidden; }
+.painel-detalhe { min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
+.detalhe { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 420px; overflow: hidden; }
 .vazio-central { display: flex; align-items: center; justify-content: center; color: var(--texto-fraco); }
+
+/* Botão "voltar" — só no mobile (master-detail) */
+.voltar-mobile {
+  display: none;
+  background: var(--painel);
+  color: var(--primario);
+  border: none;
+  border-bottom: 1px solid var(--borda);
+  padding: 12px 16px;
+  font-size: 15px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
 
 .viewer { background: #000; display: flex; align-items: center; justify-content: center; overflow: hidden; }
 .viewer img { max-width: 100%; max-height: 100%; object-fit: contain; }
@@ -160,5 +175,48 @@ body {
 .login-divisor::before, .login-divisor::after { content: ""; flex: 1; height: 1px; background: var(--borda); }
 .login-demo-hint { font-size: 12px; color: var(--texto-fraco); margin: 4px 0 0; line-height: 1.5; }
 .login-demo-hint code { background: #00000040; padding: 1px 6px; border-radius: 4px; color: var(--primario); }
+
+/* ===================== Responsivo / mobile ===================== */
+@media (max-width: 760px) {
+  /* Cabeçalho compacto e que quebra */
+  .topo { flex-wrap: wrap; gap: 8px; padding: 10px 14px; }
+  .marca { font-size: 17px; }
+  .marca small { font-size: 11px; }
+  .topo-dir { gap: 8px; flex-wrap: wrap; }
+  .medico-nome { font-size: 13px; }
+  .topo .btn { padding: 8px 12px; font-size: 13px; }
+
+  /* Layout vira uma coluna; mostra worklist OU detalhe (mestre-detalhe) */
+  .layout { grid-template-columns: 1fr; }
+  .worklist { border-right: none; }
+  .layout.com-selecao .worklist { display: none; }
+  .layout:not(.com-selecao) .painel-detalhe { display: none; }
+
+  /* Botão voltar visível só no mobile */
+  .voltar-mobile { display: block; }
+
+  /* Detalhe empilha: imagem em cima, laudo embaixo */
+  .detalhe { grid-template-columns: 1fr; grid-template-rows: auto auto; overflow: visible; }
+  .painel-detalhe { overflow-y: auto; }
+  .viewer { min-height: 46vh; max-height: 60vh; }
+  .laudo { border-left: none; border-top: 1px solid var(--borda); }
+
+  /* Campos do editor em uma coluna */
+  .achado-edit-campos { grid-template-columns: 1fr; }
+
+  /* Ações e downloads ocupam a largura, com alvos de toque maiores */
+  .acoes, .downloads { flex-direction: column; }
+  .acoes .btn, .downloads .btn { width: 100%; justify-content: center; padding: 12px; }
+  .qt-edit { flex-direction: column; align-items: stretch; }
+
+  /* Login confortável no celular */
+  .login-card { width: 100%; max-width: 360px; border-radius: 16px; }
+  .login-tela { padding: 16px; }
+}
+
+/* Respeita a área segura de aparelhos com notch */
+@supports (padding: env(safe-area-inset-bottom)) {
+  .laudo { padding-bottom: calc(20px + env(safe-area-inset-bottom)); }
+}
 
 .vazio { color: var(--texto-fraco); font-size: 14px; }
