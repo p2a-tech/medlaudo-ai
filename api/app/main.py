@@ -15,7 +15,6 @@ Fluxo coberto por estas rotas:
 from __future__ import annotations
 
 import asyncio
-import base64
 import os
 import uuid
 
@@ -26,6 +25,7 @@ from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from .armazenamento import ler_imagem_b64, ler_imagem_bytes, salvar_imagem
 from .auditoria.registro import registrar
 from .auth.seguranca import conferir_senha, criar_token, get_medico_atual
 from .db import Exame, EstadoOrthanc, Medico, SessionLocal, StatusExame, init_db
@@ -72,7 +72,7 @@ async def _processar_inferencia(exame_id: str) -> None:
         e = db.get(Exame, exame_id)
         if not e:
             return
-        imagem = _IMAGENS.get(exame_id)
+        imagem = ler_imagem_b64(exame_id)
         if not imagem:
             return
         laudo = await cliente_ia.gerar_laudo(imagem)
@@ -211,8 +211,8 @@ async def _ingerir(conteudo: bytes, db: Session) -> tuple[Exame, bool]:
         status=StatusExame.aguardando.value,
     )
     db.add(registro)
-    # Imagem de-identificada para viewer/inferência (no MVP em memória).
-    _IMAGENS[exame_id] = exame_dcm.imagem_png_b64
+    # Imagem de-identificada persistida em disco (viewer/inferência/treino).
+    salvar_imagem(exame_id, exame_dcm.imagem_png_b64)
     db.commit()
     registrar(db, exame_id, "dicom_recebido", detalhe=exame_dcm.modalidade)
 
@@ -284,10 +284,10 @@ def obter_exame(exame_id: str, db: Session = Depends(get_db)) -> dict:
 @app.get("/exames/{exame_id}/imagem")
 def obter_imagem(exame_id: str) -> Response:
     """Retorna o PNG de-identificado para o viewer."""
-    b64 = _IMAGENS.get(exame_id)
-    if not b64:
+    dados = ler_imagem_bytes(exame_id)
+    if not dados:
         raise HTTPException(status_code=404, detail="Imagem não disponível")
-    return Response(content=base64.b64decode(b64), media_type="image/png")
+    return Response(content=dados, media_type="image/png")
 
 
 @app.put("/exames/{exame_id}/laudo")
@@ -488,7 +488,3 @@ def metricas(db: Session = Depends(get_db)) -> dict:
         "criticos_detectados": criticos,
         "taxa_aproveitamento": round(assinados / total, 3) if total else 0.0,
     }
-
-
-# Armazenamento simples de imagens para o MVP (em produção: Orthanc/objeto).
-_IMAGENS: dict[str, str] = {}

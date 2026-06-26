@@ -1,0 +1,9 @@
+# Dependências SÓ para fine-tuning LoRA (exigem GPU). Não vão na imagem da API.
+# Instale na máquina de treino: pip install -r requirements-treino.txt
+torch>=2.4
+transformers>=4.46
+peft>=0.13
+trl>=0.12
+datasets>=3.0
+accelerate>=1.0
+bitsandbytes>=0.44

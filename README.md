@@ -164,6 +164,24 @@ visualmente semelhantes e injetar um resumo deles no prompt (RAG visual).
    um histograma de intensidades como placeholder de conteúdo. O grounding é
    best-effort: qualquer falha na recuperação **não derruba** a geração do laudo.
 
+## Fine-tuning com as correções dos médicos (LoRA)
+
+O sinal mais valioso do sistema são as correções dos próprios especialistas.
+Cada laudo assinado vira um par (imagem de-identificada, laudo final) para
+adaptar o MedGemma aos dados da clínica — privacidade preservada, on-premise.
+
+```bash
+cd api
+# 1) exporta o dataset SFT dos laudos assinados (imagem persistida em disco)
+python -m app.treino.exportar_dataset --saida treino.jsonl --apenas-corrigidos
+# 2) treina o adaptador LoRA (GPU; deps em requirements-treino.txt)
+pip install -r requirements-treino.txt
+python -m app.treino.treinar_lora treino.jsonl --saida ./medgemma-lora
+```
+
+Depois sirva modelo-base + adaptador no vLLM e aponte `MEDGEMMA_BASE_URL`.
+As imagens ficam em `DADOS_DIR/imagens/` (de-identificadas).
+
 ## Avaliação de qualidade (harness)
 
 Antes de confiar o MedGemma a uma clínica, é preciso **medir** a qualidade dos
@@ -197,7 +215,7 @@ Política de decisão: em achados críticos, `indeterminado` conta como POSITIVO
 - [ ] Rodar o MedGemma real em GPU e medir contra dataset anotado
 - [x] Worklist automática via poller do Orthanc (sem upload manual) + dedup
 - [x] Grounding por recuperação de casos similares (MedSigLIP) + índice de referência
-- [ ] Captura de correções → fine-tuning local (LoRA)
+- [x] Captura de correções → fine-tuning local (LoRA): export + script de treino
 - [ ] Assinatura digital com certificado ICP-Brasil
 
 ## Aviso
