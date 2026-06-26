@@ -1,0 +1,3 @@
+# Scripts de shell SEMPRE com LF — senão CRLF do Windows quebra no Linux
+# (erro "bad interpreter: /usr/bin/env bash^M").
+*.sh text eol=lf
