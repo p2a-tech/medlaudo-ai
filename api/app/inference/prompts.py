@@ -49,13 +49,16 @@ critico), descrição curta e sua confiança (0 a 1).
 """
 
 
-def montar_prompt_usuario(schema_json: str) -> str:
+def montar_prompt_usuario(schema_json: str, contexto: str = "") -> str:
     """Monta a mensagem do usuário com o roteiro e o schema-alvo.
 
     `schema_json` é o JSON Schema do modelo `Laudo`, para o MedGemma saber
-    exatamente a estrutura esperada da resposta.
+    exatamente a estrutura esperada da resposta. `contexto` é o trecho opcional
+    de grounding (casos de referência similares) injetado antes do roteiro.
     """
+    bloco_contexto = f"{contexto}\n\n" if contexto else ""
     return (
+        f"{bloco_contexto}"
         f"{ROTEIRO_LEITURA}\n\n"
         "Produza o laudo como um objeto JSON que valide contra o seguinte "
         "JSON Schema (preencha todos os campos relevantes):\n\n"

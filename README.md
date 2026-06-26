@@ -141,6 +141,29 @@ Toda a base roda em modo mock sem GPU. Para ligar o modelo de verdade:
    ```
    > Respeite a licença do dataset; use só para validação interna, anonimizado.
 
+## Grounding por casos similares (MedSigLIP)
+
+Para reduzir alucinação, o sistema pode recuperar casos de referência
+visualmente semelhantes e injetar um resumo deles no prompt (RAG visual).
+
+1. Construa o índice a partir de casos anotados e anonimizados:
+   ```bash
+   cd api
+   # com MedSigLIP no ar (GPU):
+   MEDSIGLIP_BASE_URL=http://localhost:8001 \
+     python scripts/construir_indice_referencia.py manifesto.json indice.json
+   # sem GPU: encoder mock por histograma (placeholder funcional)
+   python scripts/construir_indice_referencia.py manifesto.json indice.json
+   ```
+2. Ative no serviço de inferência:
+   ```bash
+   GROUNDING_ATIVO=1 INDICE_REFERENCIA=/dados/indice.json \
+   MEDSIGLIP_BASE_URL=http://localhost:8001 ...
+   ```
+   Em produção, `Encoder` chama o MedSigLIP (`POST {url}/embed`); sem ele, usa
+   um histograma de intensidades como placeholder de conteúdo. O grounding é
+   best-effort: qualquer falha na recuperação **não derruba** a geração do laudo.
+
 ## Avaliação de qualidade (harness)
 
 Antes de confiar o MedGemma a uma clínica, é preciso **medir** a qualidade dos
@@ -173,7 +196,7 @@ Política de decisão: em achados críticos, `indeterminado` conta como POSITIVO
 - [x] Autenticação de médicos (JWT) + CRM no laudo assinado
 - [ ] Rodar o MedGemma real em GPU e medir contra dataset anotado
 - [x] Worklist automática via poller do Orthanc (sem upload manual) + dedup
-- [ ] Grounding por recuperação de casos similares (MedSigLIP)
+- [x] Grounding por recuperação de casos similares (MedSigLIP) + índice de referência
 - [ ] Captura de correções → fine-tuning local (LoRA)
 - [ ] Assinatura digital com certificado ICP-Brasil
 

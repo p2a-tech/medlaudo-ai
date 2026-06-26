@@ -17,6 +17,7 @@ from typing import Optional
 
 import httpx
 
+from .grounding import Encoder, IndiceReferencia, formatar_contexto, grounding_ativo
 from .prompts import INSTRUCAO_SISTEMA, montar_prompt_usuario
 from .schema import (
     Achado,
@@ -33,12 +34,32 @@ MEDGEMMA_BASE_URL = os.getenv("MEDGEMMA_BASE_URL")  # ex.: http://vllm:8000/v1
 MEDGEMMA_MODEL = os.getenv("MEDGEMMA_MODEL", "google/medgemma-4b-it")
 MEDGEMMA_API_KEY = os.getenv("MEDGEMMA_API_KEY", "nao-utilizado")
 TIMEOUT_S = float(os.getenv("MEDGEMMA_TIMEOUT_S", "120"))
+INDICE_REFERENCIA = os.getenv("INDICE_REFERENCIA")  # caminho do índice JSON
+GROUNDING_K = int(os.getenv("GROUNDING_K", "3"))
 
 
 class MedGemmaClient:
     def __init__(self, base_url: Optional[str] = None) -> None:
         self.base_url = base_url or MEDGEMMA_BASE_URL
         self.modo_mock = not self.base_url
+        # Grounding opcional: carrega índice + encoder se ativo e disponível.
+        self.encoder: Encoder | None = None
+        self.indice: IndiceReferencia | None = None
+        if grounding_ativo() and INDICE_REFERENCIA and os.path.exists(INDICE_REFERENCIA):
+            self.encoder = Encoder()
+            self.indice = IndiceReferencia.carregar(INDICE_REFERENCIA)
+
+    def _contexto_grounding(self, imagem_b64: str) -> str:
+        """Recupera casos similares e formata o contexto (vazio se inativo)."""
+        if not (self.encoder and self.indice):
+            return ""
+        try:
+            emb = self.encoder.encode(imagem_b64)
+            similares = self.indice.buscar_similares(emb, GROUNDING_K)
+            return formatar_contexto(similares)
+        except Exception as exc:  # noqa: BLE001 — grounding nunca derruba o laudo
+            print(f"[grounding] falha ao recuperar casos: {exc}")
+            return ""
 
     async def gerar_laudo(self, imagem_b64: str, mime: str = "image/png") -> Laudo:
         """Gera um rascunho de laudo a partir de uma imagem (base64).
@@ -50,7 +71,8 @@ class MedGemmaClient:
         if self.modo_mock:
             laudo = self._laudo_mock()
         else:
-            laudo = await self._inferir(imagem_b64, mime)
+            contexto = self._contexto_grounding(imagem_b64)
+            laudo = await self._inferir(imagem_b64, mime, contexto)
 
         # A regra de criticidade é determinística e roda em código.
         laudo.achados_criticos = extrair_criticos(laudo.achados)
@@ -58,7 +80,7 @@ class MedGemmaClient:
         laudo.validado_por_medico = False
         return laudo
 
-    async def _inferir(self, imagem_b64: str, mime: str) -> Laudo:
+    async def _inferir(self, imagem_b64: str, mime: str, contexto: str = "") -> Laudo:
         schema_json = json.dumps(Laudo.model_json_schema(), ensure_ascii=False)
         payload = {
             "model": MEDGEMMA_MODEL,
@@ -69,7 +91,7 @@ class MedGemmaClient:
                     "content": [
                         {
                             "type": "text",
-                            "text": montar_prompt_usuario(schema_json),
+                            "text": montar_prompt_usuario(schema_json, contexto),
                         },
                         {
                             "type": "image_url",
