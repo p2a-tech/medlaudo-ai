@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { api, setToken, temToken, setModoDemo, modoDemo } from "./api.js";
 import { credenciaisDemo, medicoDemo, ehLoginDemo } from "./demo.js";
+import InstalarApp from "./InstalarApp.jsx";
 
 // Rótulos legíveis para os campos do schema de achados.
 const ROTULOS = {
@@ -456,13 +457,16 @@ export default function App() {
 
   if (!autenticado) {
     return (
-      <Login
-        onEntrar={(m, isDemo) => {
-          setMedico(m);
-          setDemoAtivo(!!isDemo);
-          setAutenticado(true);
-        }}
-      />
+      <>
+        <Login
+          onEntrar={(m, isDemo) => {
+            setMedico(m);
+            setDemoAtivo(!!isDemo);
+            setAutenticado(true);
+          }}
+        />
+        <InstalarApp />
+      </>
     );
   }
 
@@ -539,6 +543,7 @@ export default function App() {
           <Detalhe id={selecionado} onMudou={carregar} />
         </div>
       </main>
+      <InstalarApp />
     </div>
   );
 }
