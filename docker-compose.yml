@@ -1,0 +1,77 @@
+# MedLaudo-AI — pacote on-premise para a clínica.
+#
+# Sobe tudo que a clínica precisa em uma máquina:
+#   - db      : PostgreSQL (laudos, auditoria, métricas)
+#   - orthanc : PACS / receptor DICOM
+#   - api     : FastAPI (orquestração + inferência)
+#   - web     : interface de revisão do radiologista
+#   - vllm    : (perfil "gpu") serve o MedGemma 4B na GPU local
+#
+# Sem GPU, a API roda em modo MOCK (não suba o serviço vllm). Para ligar o
+# MedGemma de verdade: `docker compose --profile gpu up` e defina
+# MEDGEMMA_BASE_URL no serviço api.
+
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: medlaudo
+      POSTGRES_PASSWORD: medlaudo
+      POSTGRES_DB: medlaudo
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  orthanc:
+    image: orthancteam/orthanc:24.10.1
+    ports:
+      - "8042:8042"   # painel/REST
+      - "4242:4242"   # DICOM (recebe dos equipamentos)
+    volumes:
+      - orthanc_data:/var/lib/orthanc/db
+
+  api:
+    build: ./api
+    depends_on:
+      - db
+    environment:
+      DATABASE_URL: postgresql+psycopg://medlaudo:medlaudo@db:5432/medlaudo
+      # Deixe MEDGEMMA_BASE_URL vazia para rodar em modo MOCK.
+      # Com GPU: http://vllm:8000/v1
+      MEDGEMMA_BASE_URL: ${MEDGEMMA_BASE_URL:-}
+      MEDGEMMA_MODEL: google/medgemma-4b-it
+    ports:
+      - "8080:8080"
+
+  web:
+    build: ./web
+    depends_on:
+      - api
+    ports:
+      - "5173:5173"
+    environment:
+      VITE_API_URL: http://localhost:8080
+
+  # Inferência MedGemma na GPU — só sobe com: docker compose --profile gpu up
+  vllm:
+    image: vllm/vllm-openai:latest
+    profiles: ["gpu"]
+    command: >
+      --model google/medgemma-4b-it
+      --max-model-len 4096
+    environment:
+      HUGGING_FACE_HUB_TOKEN: ${HF_TOKEN:-}
+    ports:
+      - "8000:8000"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+volumes:
+  db_data:
+  orthanc_data:
