@@ -2,27 +2,11 @@
 // API real. Permite logar e navegar o sistema sem backend (ex.: no deploy
 // Vercel sem GPU). Os dados são fictícios e ficam só na memória do navegador.
 
+// Radiografia de tórax usada no viewer da demonstração (asset do projeto).
+import raioXTorax from "./assets/raio-x-torax.jpg";
+
 const CREDENCIAL_DEMO = { email: "demo@medlaudo.ai", senha: "demo" };
 const MEDICO_DEMO = { id: "demo", nome: "Dr. Demonstração", crm: "DEMO-RS" };
-
-// Imagem de raio-X estilizada (SVG inline) para o viewer — claramente um
-// placeholder de demonstração, não uma imagem clínica real.
-const RAIOX_SVG = `<svg xmlns='http://www.w3.org/2000/svg' width='500' height='500'>
-<rect width='500' height='500' fill='#0a0a0a'/>
-<g fill='none' stroke='#9aa6b2' stroke-width='3' opacity='0.55'>
-<path d='M250 70 V430'/>
-${Array.from({ length: 9 })
-  .map((_, i) => {
-    const y = 110 + i * 32;
-    return `<path d='M250 ${y} Q150 ${y + 18} 70 ${y + 70}'/><path d='M250 ${y} Q350 ${y + 18} 430 ${y + 70}'/>`;
-  })
-  .join("")}
-</g>
-<ellipse cx='250' cy='360' rx='70' ry='90' fill='#1b1b1b' opacity='0.6'/>
-<text x='250' y='480' fill='#5b6b7b' font-family='sans-serif' font-size='16'
- text-anchor='middle'>RADIOGRAFIA — DEMONSTRAÇÃO</text>
-</svg>`;
-const RAIOX_DATA_URL = `data:image/svg+xml;utf8,${encodeURIComponent(RAIOX_SVG)}`;
 
 function achado(p = {}) {
   return {
@@ -134,7 +118,7 @@ export const demoApi = {
         .map(({ laudo_ia, laudo_final, medico_responsavel, ...resumo }) => resumo)
     ),
   obterExame: (id) => ok(structuredClone(buscar(id) || null)),
-  imagemUrl: () => RAIOX_DATA_URL,
+  imagemUrl: () => raioXTorax,
   pdfUrl: () => "#",
   dicomUrl: () => "#",
   editarLaudo: (id, laudo) => {
