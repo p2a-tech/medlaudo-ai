@@ -25,6 +25,7 @@ services:
 
   orthanc:
     image: orthancteam/orthanc:24.10.1
+    restart: unless-stopped
     ports:
       - "8042:8042"   # painel/REST
       - "4242:4242"   # DICOM (recebe dos equipamentos)
@@ -33,29 +34,41 @@ services:
 
   api:
     build: ./api
+    restart: unless-stopped
     depends_on:
       - db
     environment:
-      DATABASE_URL: postgresql+psycopg://medlaudo:medlaudo@db:5432/medlaudo
+      # Local por padrão; em produção aponte para o Neon via DATABASE_URL.
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://medlaudo:medlaudo@db:5432/medlaudo}
       # Deixe MEDGEMMA_BASE_URL vazia para rodar em modo MOCK.
       # Com GPU: http://vllm:8000/v1
       MEDGEMMA_BASE_URL: ${MEDGEMMA_BASE_URL:-}
-      MEDGEMMA_MODEL: google/medgemma-4b-it
+      MEDGEMMA_MODEL: ${MEDGEMMA_MODEL:-google/medgemma-4b-it}
       # Inferência assíncrona (fila + worker em processo). "1" volta ao síncrono.
-      INFERENCIA_SINCRONA: "0"
+      INFERENCIA_SINCRONA: ${INFERENCIA_SINCRONA:-0}
       # Autenticação JWT — TROCAR o segredo em produção.
       JWT_SECRET: ${JWT_SECRET:-troque-este-segredo}
-      JWT_EXPIRA_HORAS: "12"
+      JWT_EXPIRA_HORAS: ${JWT_EXPIRA_HORAS:-12}
+      # CORS: domínio do frontend (Vercel) em produção; "*" em dev.
+      CORS_ORIGINS: ${CORS_ORIGINS:-*}
+      # Imagens de-identificadas persistidas (volume montado abaixo).
+      DADOS_DIR: /dados
       # Worklist automática: puxa exames novos do Orthanc (sem upload manual).
-      ORTHANC_POLL: "1"
+      ORTHANC_POLL: ${ORTHANC_POLL:-1}
       ORTHANC_URL: http://orthanc:8042
-      ORTHANC_POLL_INTERVALO: "10"
+      ORTHANC_POLL_INTERVALO: ${ORTHANC_POLL_INTERVALO:-10}
       # Envio automático do laudo assinado ao PACS (Orthanc) via C-STORE.
-      PACS_ENVIO_AUTO: "1"
+      PACS_ENVIO_AUTO: ${PACS_ENVIO_AUTO:-1}
       PACS_HOST: orthanc
       PACS_PORT: "4242"
       PACS_AE_TITLE: ORTHANC
       PACS_CALLING_AE: MEDLAUDO
+      # Grounding (MedSigLIP) — opcional.
+      GROUNDING_ATIVO: ${GROUNDING_ATIVO:-0}
+      MEDSIGLIP_BASE_URL: ${MEDSIGLIP_BASE_URL:-}
+      INDICE_REFERENCIA: ${INDICE_REFERENCIA:-}
+    volumes:
+      - imagens_data:/dados
     ports:
       - "8080:8080"
 
@@ -71,12 +84,15 @@ services:
   # Inferência MedGemma na GPU — só sobe com: docker compose --profile gpu up
   vllm:
     image: vllm/vllm-openai:latest
+    restart: unless-stopped
     profiles: ["gpu"]
     command: >
-      --model google/medgemma-4b-it
+      --model ${MEDGEMMA_MODEL:-google/medgemma-4b-it}
       --max-model-len 4096
     environment:
       HUGGING_FACE_HUB_TOKEN: ${HF_TOKEN:-}
+    volumes:
+      - hf_cache:/root/.cache/huggingface
     ports:
       - "8000:8000"
     deploy:
@@ -90,3 +106,5 @@ services:
 volumes:
   db_data:
   orthanc_data:
+  imagens_data:
+  hf_cache:

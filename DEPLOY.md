@@ -36,36 +36,39 @@ string (formato `postgresql://user:pass@ep-xxx.sa-east-1.aws.neon.tech/medlaudo?
 
 ---
 
-## 2. Backend na VM com GPU
+## 2. Backend na VM com GPU (automatizado)
 
-Requisitos: VM com **GPU NVIDIA**, Docker + **nvidia-container-toolkit**, e um
-`HF_TOKEN` com acesso a `google/medgemma-4b-it`.
+Requisitos: VM **Ubuntu 22.04/24.04** com **GPU NVIDIA** e um `HF_TOKEN` com
+acesso a `google/medgemma-4b-it`. O script `deploy/provisionar-vm.sh` instala
+**driver NVIDIA + Docker + nvidia-container-toolkit** e sobe a stack — é
+idempotente e re-executável.
 
 ```bash
 git clone https://github.com/p2a-tech/medlaudo-ai.git
 cd medlaudo-ai
+sudo bash deploy/provisionar-vm.sh
+```
 
-# configure o backend
-cp api/.env.example api/.env
-#  - DATABASE_URL = string do Neon
-#  - JWT_SECRET   = openssl rand -hex 32
-#  - HF_TOKEN     = token do Hugging Face
-#  - CORS_ORIGINS = https://SEU-PROJETO.vercel.app
-#  - MEDGEMMA_BASE_URL = http://vllm:8000/v1
-export $(grep -v '^#' api/.env | xargs)   # ou use um env_file no compose
+O que esperar:
+1. Se faltar o **driver NVIDIA**, o script instala e pede `sudo reboot`; depois
+   do boot, rode o script de novo e ele continua.
+2. Na primeira vez ele cria `api/.env` e **pausa** para você preencher:
+   `DATABASE_URL` (Neon), `JWT_SECRET` (`openssl rand -hex 32`), `HF_TOKEN`,
+   `CORS_ORIGINS` (domínio do Vercel), `MEDGEMMA_BASE_URL=http://vllm:8000/v1`.
+   Edite (`nano api/.env`) e rode de novo (ou `--apenas-stack`).
+3. Sobe `orthanc + api + vllm` com GPU (sem Postgres local — usamos Neon) e faz
+   o health check da API.
 
-# sobe API + Orthanc + MedGemma na GPU (sem o Postgres local — usamos Neon)
-docker compose --profile gpu up -d --build orthanc api vllm
-
-# cria o primeiro médico
+Depois, crie o primeiro médico (o script imprime o comando):
+```bash
 docker compose exec api python criar_medico.py "Dra. Ana" ana@clinica.com SENHA --crm 12345-RS
 ```
 
+O **vLLM baixa o MedGemma (vários GB) no 1º boot** — acompanhe com
+`docker compose logs -f vllm` até "Application startup complete".
+
 Coloque a API atrás de **HTTPS** (Caddy/Nginx/Traefik) num domínio, ex.:
 `https://api.suaclinica.com` → contêiner `api:8080`. Esse domínio é o `VITE_API_URL`.
-
-> Usando Neon, você não precisa do serviço `db` do compose — suba só
-> `orthanc api vllm` como acima. Se preferir Postgres local, inclua `db`.
 
 Smoke test do modelo real:
 ```bash
