@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
-import { api, setToken, temToken } from "./api.js";
+import { api, setToken, temToken, setModoDemo, modoDemo } from "./api.js";
+import { credenciaisDemo, medicoDemo, ehLoginDemo } from "./demo.js";
 
 // Rótulos legíveis para os campos do schema de achados.
 const ROTULOS = {
@@ -377,9 +378,20 @@ function Login({ onEntrar }) {
   const [senha, setSenha] = useState("");
   const [erro, setErro] = useState(null);
 
+  const entrarDemo = () => {
+    setModoDemo(true);
+    setToken("demo-token");
+    onEntrar(medicoDemo, true);
+  };
+
   const entrar = async (e) => {
     e.preventDefault();
     setErro(null);
+    // Credenciais demo visíveis na tela também entram pelo botão normal.
+    if (ehLoginDemo(email.trim(), senha)) {
+      entrarDemo();
+      return;
+    }
     try {
       const r = await api.login(email, senha);
       setToken(r.token);
@@ -402,6 +414,15 @@ function Login({ onEntrar }) {
                onChange={(e) => setSenha(e.target.value)} />
         {erro && <p className="login-erro">{erro}</p>}
         <button className="btn btn-primario" type="submit">Entrar</button>
+
+        <div className="login-divisor"><span>ou</span></div>
+        <button type="button" className="btn btn-secundario" onClick={entrarDemo}>
+          Entrar em modo demonstração
+        </button>
+        <p className="login-demo-hint">
+          Demonstração com dados fictícios (sem backend). Credenciais:{" "}
+          <code>{credenciaisDemo.email}</code> / <code>{credenciaisDemo.senha}</code>
+        </p>
       </form>
     </div>
   );
@@ -412,7 +433,8 @@ export default function App() {
   const [online, setOnline] = useState(true);
   const [selecionado, setSelecionado] = useState(null);
   const [autenticado, setAutenticado] = useState(temToken());
-  const [medico, setMedico] = useState(null);
+  const [medico, setMedico] = useState(modoDemo() ? medicoDemo : null);
+  const [demoAtivo, setDemoAtivo] = useState(modoDemo());
 
   const carregar = useCallback(() => {
     api
@@ -435,8 +457,9 @@ export default function App() {
   if (!autenticado) {
     return (
       <Login
-        onEntrar={(m) => {
+        onEntrar={(m, isDemo) => {
           setMedico(m);
+          setDemoAtivo(!!isDemo);
           setAutenticado(true);
         }}
       />
@@ -445,6 +468,8 @@ export default function App() {
 
   const sair = () => {
     setToken(null);
+    setModoDemo(false);
+    setDemoAtivo(false);
     setAutenticado(false);
     setMedico(null);
   };
@@ -469,6 +494,7 @@ export default function App() {
           <small>Assistente de laudo — Raio-X de tórax</small>
         </div>
         <div className="topo-dir">
+          {demoAtivo && <Badge tom="alerta">Demonstração</Badge>}
           {medico && <span className="medico-nome">{medico.nome}</span>}
           <label className="btn btn-primario upload">
             + Enviar DICOM

@@ -1,8 +1,13 @@
 // Cliente HTTP fino para a API do MedLaudo-AI.
+import { demoApi } from "./demo.js";
+
 const BASE = import.meta.env.VITE_API_URL || "http://localhost:8080";
 
 // Token JWT do médico autenticado (persistido entre reloads).
 let token = localStorage.getItem("medlaudo_token") || null;
+
+// Modo demonstração: usa o seed estático (sem backend), persistido no navegador.
+let demo = localStorage.getItem("medlaudo_demo") === "1";
 
 export function setToken(t) {
   token = t;
@@ -11,6 +16,14 @@ export function setToken(t) {
 }
 export function temToken() {
   return !!token;
+}
+export function setModoDemo(v) {
+  demo = v;
+  if (v) localStorage.setItem("medlaudo_demo", "1");
+  else localStorage.removeItem("medlaudo_demo");
+}
+export function modoDemo() {
+  return demo;
 }
 
 function authHeaders(extra = {}) {
@@ -26,7 +39,7 @@ async function json(resp) {
   return resp.json();
 }
 
-export const api = {
+const realApi = {
   base: BASE,
   login: (email, senha) =>
     fetch(`${BASE}/auth/login`, {
@@ -67,3 +80,11 @@ export const api = {
     }).then(json),
   metricas: () => fetch(`${BASE}/metricas`).then(json),
 };
+
+// Roteia para a API demo (seed estático) quando o modo demonstração está ativo.
+export const api = new Proxy(realApi, {
+  get(target, prop) {
+    if (demo && prop in demoApi) return demoApi[prop];
+    return target[prop];
+  },
+});
