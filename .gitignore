@@ -20,3 +20,6 @@ dados/
 
 # Artefatos de teste
 teste_*.db
+
+# Saida de artefatos gerados
+saida/
