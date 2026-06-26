@@ -144,6 +144,7 @@ function Detalhe({ id, onMudou }) {
   const [exame, setExame] = useState(null);
   const [edicao, setEdicao] = useState(null); // cópia de trabalho do laudo
   const [salvando, setSalvando] = useState(false);
+  const [pacs, setPacs] = useState(null); // status do envio ao PACS
 
   const recarregar = useCallback(() => {
     if (!id) return;
@@ -185,11 +186,24 @@ function Detalhe({ id, onMudou }) {
     }
   };
 
-  const assinar = () => salvar(() => api.assinar(id, "Dr. Revisor"));
+  const assinar = () =>
+    salvar(async () => {
+      const r = await api.assinar(id, "Dr. Revisor");
+      if (r.pacs) setPacs(r.pacs);
+    });
   const rejeitar = async () => {
     await api.rejeitar(id, "Dr. Revisor");
     onMudou();
     recarregar();
+  };
+  const reenviarPacs = async () => {
+    setPacs({ enviando: true });
+    try {
+      const r = await api.enviarPacs(id);
+      setPacs({ ok: true, detalhe: r.detalhe });
+    } catch {
+      setPacs({ ok: false, detalhe: "Falha ao enviar ao PACS." });
+    }
   };
 
   // Pré-visualização de criticidade enquanto edita (cálculo idêntico ao backend).
@@ -249,7 +263,16 @@ function Detalhe({ id, onMudou }) {
               <a className="btn btn-secundario" href={api.dicomUrl(id)}>
                 ⬇ DICOM p/ PACS
               </a>
+              <button className="btn btn-secundario" onClick={reenviarPacs}>
+                ⟳ Reenviar ao PACS
+              </button>
             </div>
+            {pacs && !pacs.enviando && (
+              <p className={`pacs-status ${pacs.ok ? "ok" : "falha"}`}>
+                {pacs.ok ? "✓ Enviado ao PACS" : "✗ "} {pacs.detalhe}
+              </p>
+            )}
+            {pacs?.enviando && <p className="pacs-status">Enviando ao PACS…</p>}
           </>
         )}
 

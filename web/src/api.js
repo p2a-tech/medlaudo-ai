@@ -32,5 +32,7 @@ export const api = {
     fetch(`${BASE}/exames/${id}/rejeitar?medico=${encodeURIComponent(medico)}`, {
       method: "POST",
     }).then(json),
+  enviarPacs: (id) =>
+    fetch(`${BASE}/exames/${id}/enviar-pacs`, { method: "POST" }).then(json),
   metricas: () => fetch(`${BASE}/metricas`).then(json),
 };

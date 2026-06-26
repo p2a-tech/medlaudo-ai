@@ -41,6 +41,12 @@ services:
       # Com GPU: http://vllm:8000/v1
       MEDGEMMA_BASE_URL: ${MEDGEMMA_BASE_URL:-}
       MEDGEMMA_MODEL: google/medgemma-4b-it
+      # Envio automático do laudo assinado ao PACS (Orthanc) via C-STORE.
+      PACS_ENVIO_AUTO: "1"
+      PACS_HOST: orthanc
+      PACS_PORT: "4242"
+      PACS_AE_TITLE: ORTHANC
+      PACS_CALLING_AE: MEDLAUDO
     ports:
       - "8080:8080"
 

@@ -29,6 +29,7 @@ from .dicom.processamento import processar_dicom
 from .inference.client import MedGemmaClient
 from .inference.schema import Laudo, extrair_criticos
 from .laudos.documento import gerar_dicom_pdf, gerar_pdf
+from .laudos.pacs import enviar_ao_pacs, envio_automatico_ligado
 
 app = FastAPI(title="MedLaudo-AI", version="0.1.0")
 
@@ -195,7 +196,40 @@ def assinar_laudo(
     e.status = StatusExame.assinado.value
     db.commit()
     registrar(db, exame_id, "laudo_assinado", ator=medico)
-    return {"ok": True}
+
+    # Envio automático ao PACS (best-effort: não falha a assinatura).
+    envio = None
+    if envio_automatico_ligado():
+        resultado = enviar_ao_pacs(_dicom_do_laudo(e))
+        registrar(
+            db,
+            exame_id,
+            "pacs_envio_ok" if resultado.ok else "pacs_envio_falha",
+            ator="sistema",
+            detalhe=resultado.detalhe,
+        )
+        envio = {"ok": resultado.ok, "detalhe": resultado.detalhe}
+
+    return {"ok": True, "pacs": envio}
+
+
+@app.post("/exames/{exame_id}/enviar-pacs")
+def enviar_pacs(exame_id: str, db: Session = Depends(get_db)) -> dict:
+    """Reenvia manualmente o laudo assinado ao PACS (ex.: após PACS voltar)."""
+    e = db.get(Exame, exame_id)
+    if not e:
+        raise HTTPException(status_code=404, detail="Exame não encontrado")
+    resultado = enviar_ao_pacs(_dicom_do_laudo(e))
+    registrar(
+        db,
+        exame_id,
+        "pacs_envio_ok" if resultado.ok else "pacs_envio_falha",
+        ator="sistema",
+        detalhe=resultado.detalhe,
+    )
+    if not resultado.ok:
+        raise HTTPException(status_code=502, detail=resultado.detalhe)
+    return {"ok": True, "detalhe": resultado.detalhe}
 
 
 @app.post("/exames/{exame_id}/rejeitar")
@@ -217,6 +251,21 @@ def _laudo_atual(e: Exame) -> dict:
     if not laudo:
         raise HTTPException(status_code=409, detail="Exame ainda sem laudo")
     return laudo
+
+
+def _dicom_do_laudo(e: Exame) -> bytes:
+    """Gera o DICOM Encapsulated PDF do laudo assinado. Exige assinatura."""
+    if not (e.laudo_final and e.laudo_final.get("validado_por_medico")):
+        raise HTTPException(
+            status_code=409, detail="Laudo precisa estar assinado para gerar DICOM"
+        )
+    pdf = gerar_pdf(
+        e.laudo_final,
+        modalidade=e.modalidade,
+        incidencia=e.incidencia,
+        medico=e.medico_responsavel,
+    )
+    return gerar_dicom_pdf(pdf, study_instance_uid=e.study_instance_uid)
 
 
 @app.get("/exames/{exame_id}/laudo.pdf")
@@ -250,17 +299,7 @@ def baixar_dicom(exame_id: str, db: Session = Depends(get_db)) -> Response:
     e = db.get(Exame, exame_id)
     if not e:
         raise HTTPException(status_code=404, detail="Exame não encontrado")
-    if not (e.laudo_final and e.laudo_final.get("validado_por_medico")):
-        raise HTTPException(
-            status_code=409, detail="Laudo precisa estar assinado para gerar DICOM"
-        )
-    pdf = gerar_pdf(
-        e.laudo_final,
-        modalidade=e.modalidade,
-        incidencia=e.incidencia,
-        medico=e.medico_responsavel,
-    )
-    dcm = gerar_dicom_pdf(pdf, study_instance_uid=e.study_instance_uid)
+    dcm = _dicom_do_laudo(e)
     registrar(db, exame_id, "dicom_sr_gerado", ator=e.medico_responsavel or "sistema")
     return Response(
         content=dcm,

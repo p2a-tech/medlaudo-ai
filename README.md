@@ -84,7 +84,7 @@ npm run dev   # http://localhost:5173
 
 - [x] Edição campo a campo do laudo na web
 - [x] Geração de PDF + DICOM (Encapsulated PDF) do laudo final
-- [ ] Envio automático do DICOM do laudo ao PACS (C-STORE), hoje é download manual
+- [x] Envio automático do laudo ao PACS na assinatura (C-STORE) + reenvio manual
 - [ ] Worker assíncrono (fila) para inferência em vez de síncrono
 - [ ] Grounding por recuperação de casos similares (MedSigLIP)
 - [ ] Captura de correções → fine-tuning local (LoRA)

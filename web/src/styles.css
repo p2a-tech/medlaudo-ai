@@ -137,7 +137,10 @@ body {
 .link-pdf { color: var(--primario); text-decoration: none; }
 .link-pdf:hover { text-decoration: underline; }
 
-.downloads { display: flex; gap: 10px; margin-top: 18px; }
+.downloads { display: flex; gap: 10px; margin-top: 18px; flex-wrap: wrap; }
 .downloads .btn { text-decoration: none; display: inline-flex; align-items: center; }
+.pacs-status { font-size: 13px; margin-top: 10px; color: var(--texto-fraco); }
+.pacs-status.ok { color: var(--ok); }
+.pacs-status.falha { color: var(--critico); }
 
 .vazio { color: var(--texto-fraco); font-size: 14px; }
