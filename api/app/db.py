@@ -15,8 +15,21 @@ from enum import Enum
 from sqlalchemy import JSON, DateTime, String, Text, create_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 
-DATABASE_URL = os.getenv(
-    "DATABASE_URL", "postgresql+psycopg://medlaudo:medlaudo@db:5432/medlaudo"
+def _normalizar_url(url: str) -> str:
+    """Aceita a string do Neon (e de outros provedores) sem ajuste manual.
+
+    O Neon entrega `postgresql://...?sslmode=require`; forçamos o driver psycopg
+    (v3, o que instalamos) reescrevendo o esquema para `postgresql+psycopg://`.
+    """
+    if url.startswith("postgresql://"):
+        url = "postgresql+psycopg://" + url[len("postgresql://") :]
+    elif url.startswith("postgres://"):  # alguns provedores usam este alias
+        url = "postgresql+psycopg://" + url[len("postgres://") :]
+    return url
+
+
+DATABASE_URL = _normalizar_url(
+    os.getenv("DATABASE_URL", "postgresql+psycopg://medlaudo:medlaudo@db:5432/medlaudo")
 )
 
 engine = create_engine(DATABASE_URL, pool_pre_ping=True)

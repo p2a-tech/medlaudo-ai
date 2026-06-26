@@ -38,10 +38,12 @@ from .laudos.pacs import enviar_ao_pacs, envio_automatico_ligado
 
 app = FastAPI(title="MedLaudo-AI", version="0.1.0")
 
-# Em produção on-prem, restringir ao host da clínica.
+# Em produção, defina CORS_ORIGINS com o domínio do frontend (ex.:
+# "https://medlaudo.vercel.app"); use vírgula para múltiplos. Default: "*".
+_cors = os.getenv("CORS_ORIGINS", "*")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"] if _cors == "*" else [o.strip() for o in _cors.split(",")],
     allow_methods=["*"],
     allow_headers=["*"],
 )
