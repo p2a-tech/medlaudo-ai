@@ -103,6 +103,34 @@ o exame virar `rascunho_pronto`. Para um modo determinístico (testes), use
    e **assina** ou **rejeita**.
 4. Cada ação fica registrada na auditoria e nas métricas (`GET /metricas`).
 
+## Colocar o MedGemma real em produção (runbook)
+
+Toda a base roda em modo mock sem GPU. Para ligar o modelo de verdade:
+
+1. **GPU + token.** Máquina com GPU NVIDIA e `HF_TOKEN` com acesso a
+   `google/medgemma-4b-it` (aceite os termos no Hugging Face).
+2. **Suba a stack com vLLM:**
+   ```bash
+   export HF_TOKEN=...   # acesso ao modelo
+   export MEDGEMMA_BASE_URL=http://vllm:8000/v1
+   docker compose --profile gpu up --build
+   ```
+3. **Smoke test** (confirma conexão + saída restrita ao schema):
+   ```bash
+   cd api
+   MEDGEMMA_BASE_URL=http://localhost:8000/v1 \
+     python -m app.avaliacao.verificar_modelo caminho/imagem.png
+   ```
+4. **Meça a qualidade** contra um dataset anotado (ver harness abaixo). Para
+   datasets públicos estilo CheXpert/MIMIC-CXR, converta os rótulos:
+   ```bash
+   python scripts/chexpert_para_manifesto.py train.csv manifesto.json \
+       --base-imagens CheXpert-v1.0 --incerto ausente
+   MEDGEMMA_BASE_URL=http://localhost:8000/v1 \
+     python -m app.avaliacao.executar manifesto.json --saida resultado.json
+   ```
+   > Respeite a licença do dataset; use só para validação interna, anonimizado.
+
 ## Avaliação de qualidade (harness)
 
 Antes de confiar o MedGemma a uma clínica, é preciso **medir** a qualidade dos
