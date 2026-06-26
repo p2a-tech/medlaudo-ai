@@ -82,8 +82,9 @@ npm run dev   # http://localhost:5173
 
 ## Roadmap
 
-- [ ] Edição campo a campo do laudo na web (hoje: assinar/rejeitar)
-- [ ] Geração de DICOM SR + PDF do laudo final
+- [x] Edição campo a campo do laudo na web
+- [x] Geração de PDF + DICOM (Encapsulated PDF) do laudo final
+- [ ] Envio automático do DICOM do laudo ao PACS (C-STORE), hoje é download manual
 - [ ] Worker assíncrono (fila) para inferência em vez de síncrono
 - [ ] Grounding por recuperação de casos similares (MedSigLIP)
 - [ ] Captura de correções → fine-tuning local (LoRA)

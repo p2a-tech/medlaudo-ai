@@ -11,6 +11,8 @@ export const api = {
   listarExames: () => fetch(`${BASE}/exames`).then(json),
   obterExame: (id) => fetch(`${BASE}/exames/${id}`).then(json),
   imagemUrl: (id) => `${BASE}/exames/${id}/imagem`,
+  pdfUrl: (id) => `${BASE}/exames/${id}/laudo.pdf`,
+  dicomUrl: (id) => `${BASE}/exames/${id}/laudo.dcm`,
   enviarDicom: (arquivo) => {
     const fd = new FormData();
     fd.append("arquivo", arquivo);

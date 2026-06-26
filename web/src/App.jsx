@@ -242,6 +242,14 @@ function Detalhe({ id, onMudou }) {
               <h3>Impressão</h3>
               <p className="impressao">{edicao.impressao || "—"}</p>
             </section>
+            <div className="downloads">
+              <a className="btn btn-secundario" href={api.pdfUrl(id)} target="_blank" rel="noreferrer">
+                ⬇ Baixar PDF
+              </a>
+              <a className="btn btn-secundario" href={api.dicomUrl(id)}>
+                ⬇ DICOM p/ PACS
+              </a>
+            </div>
           </>
         )}
 
@@ -325,7 +333,10 @@ function Detalhe({ id, onMudou }) {
               </button>
             </div>
             <p className="nota-ia">
-              ● marca campos alterados em relação ao rascunho da IA.
+              ● marca campos alterados em relação ao rascunho da IA.{" "}
+              <a className="link-pdf" href={api.pdfUrl(id)} target="_blank" rel="noreferrer">
+                Pré-visualizar PDF (rascunho)
+              </a>
             </p>
           </>
         )}

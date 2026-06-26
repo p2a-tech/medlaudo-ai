@@ -55,7 +55,9 @@ def main():
     assert cli.get("/saude").json()["modo_ia"] == "mock"
 
     # 1) Upload do DICOM -> rascunho da IA
-    r = cli.post("/exames", files={"arquivo": ("ex.dcm", dicom_sintetico(), "application/dicom")})
+    dcm_bytes = dicom_sintetico()
+    laudo_study_uid = str(pydicom.dcmread(io.BytesIO(dcm_bytes)).StudyInstanceUID)
+    r = cli.post("/exames", files={"arquivo": ("ex.dcm", dcm_bytes, "application/dicom")})
     assert r.status_code == 200, r.text
     exame_id = r.json()["id"]
     print("1. Rascunho IA gerado. crítico inicial:", r.json()["critico"])
@@ -88,7 +90,27 @@ def main():
     assert final["status"] == "assinado"
     print("4. Laudo assinado por:", final["medico_responsavel"], "| status:", final["status"])
 
-    print("5. Métricas:", cli.get("/metricas").json())
+    # 4) Download do PDF (deve ser um PDF de verdade)
+    rp = cli.get(f"/exames/{exame_id}/laudo.pdf")
+    assert rp.status_code == 200, rp.text
+    assert rp.headers["content-type"] == "application/pdf"
+    assert rp.content[:5] == b"%PDF-", "PDF inválido"
+    print(f"5. PDF gerado: {len(rp.content)} bytes, header {rp.content[:5]!r}")
+
+    # 5) Download do DICOM Encapsulated PDF (magic 'DICM' no offset 128)
+    rd = cli.get(f"/exames/{exame_id}/laudo.dcm")
+    assert rd.status_code == 200, rd.text
+    assert rd.content[128:132] == b"DICM", "DICOM inválido"
+    # relê o DICOM e confirma que o PDF está encapsulado e o estudo foi reusado
+    import pydicom as _pyd
+    rel = _pyd.dcmread(io.BytesIO(rd.content))
+    assert rel.SOPClassUID == "1.2.840.10008.5.1.4.1.1.104.1"
+    assert rel.MIMETypeOfEncapsulatedDocument == "application/pdf"
+    assert bytes(rel.EncapsulatedDocument)[:5] == b"%PDF-"
+    assert str(rel.StudyInstanceUID) == laudo_study_uid
+    print(f"6. DICOM Encapsulated PDF: {len(rd.content)} bytes, estudo reusado OK")
+
+    print("7. Métricas:", cli.get("/metricas").json())
     print("\nTODOS OS PASSOS OK")
 
 

@@ -134,5 +134,10 @@ body {
 .txt { width: 100%; resize: vertical; }
 .nota-ia { font-size: 12px; color: var(--texto-fraco); margin-top: 10px; }
 .nota-ia::first-letter { color: var(--alerta); }
+.link-pdf { color: var(--primario); text-decoration: none; }
+.link-pdf:hover { text-decoration: underline; }
+
+.downloads { display: flex; gap: 10px; margin-top: 18px; }
+.downloads .btn { text-decoration: none; display: inline-flex; align-items: center; }
 
 .vazio { color: var(--texto-fraco); font-size: 14px; }

@@ -28,6 +28,7 @@ from .db import Exame, SessionLocal, StatusExame, init_db
 from .dicom.processamento import processar_dicom
 from .inference.client import MedGemmaClient
 from .inference.schema import Laudo, extrair_criticos
+from .laudos.documento import gerar_dicom_pdf, gerar_pdf
 
 app = FastAPI(title="MedLaudo-AI", version="0.1.0")
 
@@ -208,6 +209,66 @@ def rejeitar(
     db.commit()
     registrar(db, exame_id, "rascunho_rejeitado", ator=medico)
     return {"ok": True}
+
+
+def _laudo_atual(e: Exame) -> dict:
+    """Laudo a ser documentado: o final (assinado/editado) ou o rascunho da IA."""
+    laudo = e.laudo_final or e.laudo_ia
+    if not laudo:
+        raise HTTPException(status_code=409, detail="Exame ainda sem laudo")
+    return laudo
+
+
+@app.get("/exames/{exame_id}/laudo.pdf")
+def baixar_pdf(exame_id: str, db: Session = Depends(get_db)) -> Response:
+    """PDF legível do laudo (com aviso de rascunho se não assinado)."""
+    e = db.get(Exame, exame_id)
+    if not e:
+        raise HTTPException(status_code=404, detail="Exame não encontrado")
+    pdf = gerar_pdf(
+        _laudo_atual(e),
+        modalidade=e.modalidade,
+        incidencia=e.incidencia,
+        medico=e.medico_responsavel,
+    )
+    registrar(db, exame_id, "pdf_gerado", ator=e.medico_responsavel or "sistema")
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'inline; filename="laudo_{exame_id[:8]}.pdf"'
+        },
+    )
+
+
+@app.get("/exames/{exame_id}/laudo.dcm")
+def baixar_dicom(exame_id: str, db: Session = Depends(get_db)) -> Response:
+    """Laudo como DICOM Encapsulated PDF, pronto para enviar ao PACS.
+
+    Só liberado após assinatura — não devolvemos rascunho não validado ao PACS.
+    """
+    e = db.get(Exame, exame_id)
+    if not e:
+        raise HTTPException(status_code=404, detail="Exame não encontrado")
+    if not (e.laudo_final and e.laudo_final.get("validado_por_medico")):
+        raise HTTPException(
+            status_code=409, detail="Laudo precisa estar assinado para gerar DICOM"
+        )
+    pdf = gerar_pdf(
+        e.laudo_final,
+        modalidade=e.modalidade,
+        incidencia=e.incidencia,
+        medico=e.medico_responsavel,
+    )
+    dcm = gerar_dicom_pdf(pdf, study_instance_uid=e.study_instance_uid)
+    registrar(db, exame_id, "dicom_sr_gerado", ator=e.medico_responsavel or "sistema")
+    return Response(
+        content=dcm,
+        media_type="application/dicom",
+        headers={
+            "Content-Disposition": f'attachment; filename="laudo_{exame_id[:8]}.dcm"'
+        },
+    )
 
 
 @app.get("/metricas")
