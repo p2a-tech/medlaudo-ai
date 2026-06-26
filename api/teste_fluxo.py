@@ -7,9 +7,10 @@ Postgres. Roda com: python teste_fluxo.py
 import io
 import os
 
-# DB SQLite e modo mock (sem MEDGEMMA_BASE_URL) ANTES de importar o app.
+# DB SQLite, modo mock e inferência síncrona ANTES de importar o app.
 os.environ["DATABASE_URL"] = "sqlite:///./teste_fluxo.db"
 os.environ.pop("MEDGEMMA_BASE_URL", None)
+os.environ["INFERENCIA_SINCRONA"] = "1"  # upload retorna o rascunho na hora
 
 import numpy as np
 import pydicom
@@ -54,6 +55,20 @@ def main():
 
     assert cli.get("/saude").json()["modo_ia"] == "mock"
 
+    # Cria um médico e autentica (rotas de mutação exigem token).
+    import uuid as _uuid
+    from app.auth.seguranca import hash_senha
+    from app.db import Medico, SessionLocal
+    _db = SessionLocal()
+    _db.add(Medico(id=str(_uuid.uuid4()), nome="Dr. Teste", email="teste@clinica.com",
+                   crm="00000-RS", senha_hash=hash_senha("segredo")))
+    _db.commit(); _db.close()
+    token = cli.post("/auth/login", json={"email": "teste@clinica.com", "senha": "segredo"}).json()["token"]
+    auth = {"Authorization": f"Bearer {token}"}
+    print("0. Login OK, rotas de mutação exigem autenticação")
+    # Sem token, editar deve ser barrado.
+    assert cli.put(f"/exames/x/laudo", json={}).status_code in (401, 403)
+
     # 1) Upload do DICOM -> rascunho da IA
     dcm_bytes = dicom_sintetico()
     laudo_study_uid = str(pydicom.dcmread(io.BytesIO(dcm_bytes)).StudyInstanceUID)
@@ -73,7 +88,7 @@ def main():
         "confianca": 0.9,
     }
     laudo["impressao"] = "Pneumotórax acentuado à esquerda. Comunicação imediata."
-    r = cli.put(f"/exames/{exame_id}/laudo?medico=Dr.%20Teste", json=laudo)
+    r = cli.put(f"/exames/{exame_id}/laudo", json=laudo, headers=auth)
     assert r.status_code == 200, r.text
     print("2. Após edição, achados_criticos:", r.json()["achados_criticos"])
     assert "Pneumotórax" in r.json()["achados_criticos"], "deveria ter virado crítico"
@@ -84,7 +99,7 @@ def main():
     print("3. Worklist marcou exame como crítico:", det["critico"])
 
     # 3) Assinatura
-    cli.post(f"/exames/{exame_id}/assinar?medico=Dr.%20Teste")
+    cli.post(f"/exames/{exame_id}/assinar", headers=auth)
     final = cli.get(f"/exames/{exame_id}").json()
     assert final["laudo_final"]["validado_por_medico"] is True
     assert final["status"] == "assinado"

@@ -41,6 +41,11 @@ services:
       # Com GPU: http://vllm:8000/v1
       MEDGEMMA_BASE_URL: ${MEDGEMMA_BASE_URL:-}
       MEDGEMMA_MODEL: google/medgemma-4b-it
+      # Inferência assíncrona (fila + worker em processo). "1" volta ao síncrono.
+      INFERENCIA_SINCRONA: "0"
+      # Autenticação JWT — TROCAR o segredo em produção.
+      JWT_SECRET: ${JWT_SECRET:-troque-este-segredo}
+      JWT_EXPIRA_HORAS: "12"
       # Envio automático do laudo assinado ao PACS (Orthanc) via C-STORE.
       PACS_ENVIO_AUTO: "1"
       PACS_HOST: orthanc

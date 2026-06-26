@@ -143,4 +143,18 @@ body {
 .pacs-status.ok { color: var(--ok); }
 .pacs-status.falha { color: var(--critico); }
 
+.processando { color: var(--alerta); font-size: 14px; margin-top: 16px; }
+
+.topo-dir { display: flex; align-items: center; gap: 12px; }
+.medico-nome { color: var(--texto-fraco); font-size: 14px; }
+
+/* Login */
+.login-tela { height: 100vh; display: flex; align-items: center; justify-content: center; background: var(--bg); }
+.login-card { background: var(--painel); border: 1px solid var(--borda); border-radius: 14px; padding: 32px; width: 320px; display: flex; flex-direction: column; gap: 12px; }
+.login-marca { font-size: 26px; font-weight: 700; }
+.login-sub { color: var(--texto-fraco); font-size: 14px; margin: 0 0 6px; }
+.login-card .inp { padding: 10px 12px; font-size: 14px; }
+.login-card .btn { margin-top: 6px; justify-content: center; }
+.login-erro { color: var(--critico); font-size: 13px; margin: 0; }
+
 .vazio { color: var(--texto-fraco); font-size: 14px; }

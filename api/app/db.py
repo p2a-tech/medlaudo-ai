@@ -65,6 +65,20 @@ class Exame(Base):
     )
 
 
+class Medico(Base):
+    """Médico radiologista que revisa e assina laudos."""
+
+    __tablename__ = "medicos"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    nome: Mapped[str] = mapped_column(String)
+    email: Mapped[str] = mapped_column(String, unique=True, index=True)
+    crm: Mapped[str | None] = mapped_column(String, nullable=True)
+    senha_hash: Mapped[str] = mapped_column(String)
+    ativo: Mapped[bool] = mapped_column(default=True)
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_agora)
+
+
 class Auditoria(Base):
     """Trilha de auditoria append-only. Cada evento relevante vira um registro.
     Essencial para conformidade e para medir ROI (tempo de laudo, edições)."""

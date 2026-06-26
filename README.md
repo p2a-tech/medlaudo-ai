@@ -72,6 +72,29 @@ npm install
 npm run dev   # http://localhost:5173
 ```
 
+## Autenticação e médicos
+
+As rotas que mudam o laudo (editar/assinar/rejeitar/enviar ao PACS) exigem um
+médico autenticado (JWT Bearer). A identidade do signatário vem do token, não de
+um parâmetro — o CRM é gravado no laudo assinado.
+
+Crie um médico:
+
+```bash
+cd api
+python criar_medico.py "Dra. Ana Souza" ana@clinica.com SENHA --crm 12345-RS
+```
+
+A web mostra uma tela de login; o token fica no navegador e é enviado nas ações.
+
+## Inferência assíncrona
+
+Por padrão a inferência é **assíncrona**: o upload responde na hora (status
+`aguardando`) e um worker em processo (fila `asyncio`) gera o rascunho logo em
+seguida — o upload nunca trava esperando a GPU. A worklist faz polling e mostra
+o exame virar `rascunho_pronto`. Para um modo determinístico (testes), use
+`INFERENCIA_SINCRONA=1` (processa inline e devolve o rascunho na resposta).
+
 ## Fluxo de uso
 
 1. Equipamento envia DICOM ao Orthanc (ou faça upload pela web — "+ Enviar DICOM").
@@ -108,12 +131,13 @@ Política de decisão: em achados críticos, `indeterminado` conta como POSITIVO
 - [x] Geração de PDF + DICOM (Encapsulated PDF) do laudo final
 - [x] Envio automático do laudo ao PACS na assinatura (C-STORE) + reenvio manual
 - [x] Harness de avaliação (sensibilidade/especificidade por achado, foco em críticos)
+- [x] Worker assíncrono (fila em processo) para inferência
+- [x] Autenticação de médicos (JWT) + CRM no laudo assinado
 - [ ] Rodar o MedGemma real em GPU e medir contra dataset anotado
-- [ ] Worker assíncrono (fila) para inferência em vez de síncrono
 - [ ] Grounding por recuperação de casos similares (MedSigLIP)
 - [ ] Captura de correções → fine-tuning local (LoRA)
 - [ ] Integração de worklist direto do Orthanc (sem upload manual)
-- [ ] Autenticação de médicos + assinatura digital
+- [ ] Assinatura digital com certificado ICP-Brasil
 
 ## Aviso
 

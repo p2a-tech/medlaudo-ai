@@ -14,17 +14,21 @@ Fluxo coberto por estas rotas:
 
 from __future__ import annotations
 
+import asyncio
 import base64
+import os
 import uuid
 
 from fastapi import Depends, FastAPI, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
+from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .auditoria.registro import registrar
-from .db import Exame, SessionLocal, StatusExame, init_db
+from .auth.seguranca import conferir_senha, criar_token, get_medico_atual
+from .db import Exame, Medico, SessionLocal, StatusExame, init_db
 from .dicom.processamento import processar_dicom
 from .inference.client import MedGemmaClient
 from .inference.schema import Laudo, extrair_criticos
@@ -43,6 +47,13 @@ app.add_middleware(
 
 cliente_ia = MedGemmaClient()
 
+# Inferência: por padrão assíncrona (fila + worker em processo). Em testes,
+# INFERENCIA_SINCRONA=1 roda inline, deixando o resultado determinístico.
+INFERENCIA_SINCRONA = os.getenv("INFERENCIA_SINCRONA", "0") in ("1", "true", "True")
+
+# Fila de inferência (preenchida no startup quando assíncrona).
+_fila: asyncio.Queue[str] | None = None
+
 
 def get_db():
     db = SessionLocal()
@@ -52,14 +63,80 @@ def get_db():
         db.close()
 
 
+async def _processar_inferencia(exame_id: str) -> None:
+    """Roda a IA sobre um exame e grava o rascunho. Usa sessão própria —
+    é chamada tanto inline (modo síncrono) quanto pelo worker (assíncrono)."""
+    db = SessionLocal()
+    try:
+        e = db.get(Exame, exame_id)
+        if not e:
+            return
+        imagem = _IMAGENS.get(exame_id)
+        if not imagem:
+            return
+        laudo = await cliente_ia.gerar_laudo(imagem)
+        e.laudo_ia = laudo.model_dump()
+        e.status = StatusExame.rascunho_pronto.value
+        e.critico = len(laudo.achados_criticos) > 0
+        db.commit()
+        registrar(
+            db,
+            exame_id,
+            "rascunho_gerado",
+            ator="ia",
+            detalhe=", ".join(laudo.achados_criticos) or "sem achados críticos",
+        )
+    finally:
+        db.close()
+
+
+async def _worker() -> None:
+    """Consome a fila de inferência indefinidamente."""
+    assert _fila is not None
+    while True:
+        exame_id = await _fila.get()
+        try:
+            await _processar_inferencia(exame_id)
+        except Exception as exc:  # noqa: BLE001 — worker não pode morrer
+            print(f"[worker] falha ao processar {exame_id}: {exc}")
+        finally:
+            _fila.task_done()
+
+
 @app.on_event("startup")
-def _startup() -> None:
+async def _startup() -> None:
     init_db()
+    global _fila
+    if not INFERENCIA_SINCRONA:
+        _fila = asyncio.Queue()
+        asyncio.create_task(_worker())
 
 
 @app.get("/saude")
 def saude() -> dict:
-    return {"ok": True, "modo_ia": "mock" if cliente_ia.modo_mock else "medgemma"}
+    return {
+        "ok": True,
+        "modo_ia": "mock" if cliente_ia.modo_mock else "medgemma",
+        "inferencia": "sincrona" if INFERENCIA_SINCRONA else "assincrona",
+    }
+
+
+# ---- autenticação ---------------------------------------------------------
+
+class LoginEntrada(BaseModel):
+    email: str
+    senha: str
+
+
+@app.post("/auth/login")
+def login(dados: LoginEntrada, db: Session = Depends(get_db)) -> dict:
+    medico = db.scalar(select(Medico).where(Medico.email == dados.email.lower()))
+    if not medico or not medico.ativo or not conferir_senha(dados.senha, medico.senha_hash):
+        raise HTTPException(status_code=401, detail="Credenciais inválidas")
+    return {
+        "token": criar_token(medico),
+        "medico": {"id": medico.id, "nome": medico.nome, "crm": medico.crm},
+    }
 
 
 @app.post("/exames")
@@ -83,28 +160,27 @@ async def criar_exame(arquivo: UploadFile, db: Session = Depends(get_db)) -> dic
         status=StatusExame.aguardando.value,
     )
     db.add(registro)
+    # Guarda a imagem para o viewer/inferência (no MVP, em memória; em produção,
+    # no Orthanc/objeto). Disponível antes de enfileirar.
+    _IMAGENS[exame_id] = exame_dcm.imagem_png_b64
     db.commit()
     registrar(db, exame_id, "dicom_recebido", detalhe=exame_dcm.modalidade)
 
-    # Inferência. No MVP é síncrona; em produção vira fila/worker.
-    laudo = await cliente_ia.gerar_laudo(exame_dcm.imagem_png_b64)
+    if INFERENCIA_SINCRONA:
+        # Modo determinístico (testes): processa inline e devolve o rascunho.
+        await _processar_inferencia(exame_id)
+        db.refresh(registro)
+        return {
+            "id": exame_id,
+            "status": registro.status,
+            "critico": registro.critico,
+            "laudo": registro.laudo_ia,
+        }
 
-    registro.laudo_ia = laudo.model_dump()
-    registro.status = StatusExame.rascunho_pronto.value
-    registro.critico = len(laudo.achados_criticos) > 0
-    # Guarda a imagem para o viewer (campo simples; ver nota acima).
-    _IMAGENS[exame_id] = exame_dcm.imagem_png_b64
-    db.commit()
-
-    registrar(
-        db,
-        exame_id,
-        "rascunho_gerado",
-        ator="ia",
-        detalhe=", ".join(laudo.achados_criticos) or "sem achados críticos",
-    )
-
-    return {"id": exame_id, "critico": registro.critico, "laudo": laudo.model_dump()}
+    # Modo assíncrono (produção): enfileira e responde já, sem bloquear o upload.
+    assert _fila is not None
+    await _fila.put(exame_id)
+    return {"id": exame_id, "status": registro.status, "critico": False, "laudo": None}
 
 
 @app.get("/exames")
@@ -157,9 +233,12 @@ def obter_imagem(exame_id: str) -> Response:
 
 @app.put("/exames/{exame_id}/laudo")
 def editar_laudo(
-    exame_id: str, laudo: Laudo, medico: str = "medico", db: Session = Depends(get_db)
+    exame_id: str,
+    laudo: Laudo,
+    db: Session = Depends(get_db),
+    medico: Medico = Depends(get_medico_atual),
 ) -> dict:
-    """Salva edições do médico (sem assinar).
+    """Salva edições do médico autenticado (sem assinar).
 
     Recalcula a criticidade a partir dos achados editados — se o médico
     adicionar/remover um achado crítico, a prioridade da worklist acompanha.
@@ -171,18 +250,20 @@ def editar_laudo(
     laudo.achados_criticos = extrair_criticos(laudo.achados)
     e.laudo_final = laudo.model_dump()
     e.critico = len(laudo.achados_criticos) > 0
-    e.medico_responsavel = medico
+    e.medico_responsavel = medico.nome
     e.status = StatusExame.em_revisao.value
     db.commit()
-    registrar(db, exame_id, "laudo_editado", ator=medico)
+    registrar(db, exame_id, "laudo_editado", ator=medico.nome)
     return {"ok": True, "achados_criticos": laudo.achados_criticos}
 
 
 @app.post("/exames/{exame_id}/assinar")
 def assinar_laudo(
-    exame_id: str, medico: str = "medico", db: Session = Depends(get_db)
+    exame_id: str,
+    db: Session = Depends(get_db),
+    medico: Medico = Depends(get_medico_atual),
 ) -> dict:
-    """Assina o laudo final. A partir daqui, vira documento clínico oficial."""
+    """Assina o laudo final com a identidade do médico autenticado."""
     e = db.get(Exame, exame_id)
     if not e:
         raise HTTPException(status_code=404, detail="Exame não encontrado")
@@ -191,11 +272,12 @@ def assinar_laudo(
     # como suja no SQLAlchemy (mutação in-place não é detectada).
     final = dict(e.laudo_final or e.laudo_ia or {})
     final["validado_por_medico"] = True
+    final["assinado_por_crm"] = medico.crm or ""
     e.laudo_final = final
-    e.medico_responsavel = medico
+    e.medico_responsavel = medico.nome
     e.status = StatusExame.assinado.value
     db.commit()
-    registrar(db, exame_id, "laudo_assinado", ator=medico)
+    registrar(db, exame_id, "laudo_assinado", ator=medico.nome)
 
     # Envio automático ao PACS (best-effort: não falha a assinatura).
     envio = None
@@ -214,7 +296,11 @@ def assinar_laudo(
 
 
 @app.post("/exames/{exame_id}/enviar-pacs")
-def enviar_pacs(exame_id: str, db: Session = Depends(get_db)) -> dict:
+def enviar_pacs(
+    exame_id: str,
+    db: Session = Depends(get_db),
+    medico: Medico = Depends(get_medico_atual),
+) -> dict:
     """Reenvia manualmente o laudo assinado ao PACS (ex.: após PACS voltar)."""
     e = db.get(Exame, exame_id)
     if not e:
@@ -234,14 +320,16 @@ def enviar_pacs(exame_id: str, db: Session = Depends(get_db)) -> dict:
 
 @app.post("/exames/{exame_id}/rejeitar")
 def rejeitar(
-    exame_id: str, medico: str = "medico", db: Session = Depends(get_db)
+    exame_id: str,
+    db: Session = Depends(get_db),
+    medico: Medico = Depends(get_medico_atual),
 ) -> dict:
     e = db.get(Exame, exame_id)
     if not e:
         raise HTTPException(status_code=404, detail="Exame não encontrado")
     e.status = StatusExame.rejeitado.value
     db.commit()
-    registrar(db, exame_id, "rascunho_rejeitado", ator=medico)
+    registrar(db, exame_id, "rascunho_rejeitado", ator=medico.nome)
     return {"ok": True}
 
 

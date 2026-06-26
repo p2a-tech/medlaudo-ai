@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { api } from "./api.js";
+import { api, setToken, temToken } from "./api.js";
 
 // Rótulos legíveis para os campos do schema de achados.
 const ROTULOS = {
@@ -177,7 +177,7 @@ function Detalhe({ id, onMudou }) {
   const salvar = async (depois) => {
     setSalvando(true);
     try {
-      await api.editarLaudo(id, edicao, "Dr. Revisor");
+      await api.editarLaudo(id, edicao);
       if (depois) await depois();
       onMudou();
       recarregar();
@@ -188,11 +188,11 @@ function Detalhe({ id, onMudou }) {
 
   const assinar = () =>
     salvar(async () => {
-      const r = await api.assinar(id, "Dr. Revisor");
+      const r = await api.assinar(id);
       if (r.pacs) setPacs(r.pacs);
     });
   const rejeitar = async () => {
-    await api.rejeitar(id, "Dr. Revisor");
+    await api.rejeitar(id);
     onMudou();
     recarregar();
   };
@@ -236,6 +236,10 @@ function Detalhe({ id, onMudou }) {
           <div className="banner-critico">
             ⚠ Achado(s) crítico(s): {criticosLocais.join(", ")}
           </div>
+        )}
+
+        {!edicao && (
+          <p className="processando">Processando com IA… o rascunho aparece em instantes.</p>
         )}
 
         {/* -------- Modo somente-leitura (assinado) -------- */}
@@ -368,10 +372,47 @@ function Detalhe({ id, onMudou }) {
   );
 }
 
+function Login({ onEntrar }) {
+  const [email, setEmail] = useState("");
+  const [senha, setSenha] = useState("");
+  const [erro, setErro] = useState(null);
+
+  const entrar = async (e) => {
+    e.preventDefault();
+    setErro(null);
+    try {
+      const r = await api.login(email, senha);
+      setToken(r.token);
+      onEntrar(r.medico);
+    } catch {
+      setErro("E-mail ou senha inválidos.");
+    }
+  };
+
+  return (
+    <div className="login-tela">
+      <form className="login-card" onSubmit={entrar}>
+        <div className="marca login-marca">
+          MedLaudo<span>·AI</span>
+        </div>
+        <p className="login-sub">Acesso do médico radiologista</p>
+        <input className="inp" type="email" placeholder="e-mail" value={email}
+               onChange={(e) => setEmail(e.target.value)} autoFocus />
+        <input className="inp" type="password" placeholder="senha" value={senha}
+               onChange={(e) => setSenha(e.target.value)} />
+        {erro && <p className="login-erro">{erro}</p>}
+        <button className="btn btn-primario" type="submit">Entrar</button>
+      </form>
+    </div>
+  );
+}
+
 export default function App() {
   const [exames, setExames] = useState([]);
   const [online, setOnline] = useState(true);
   const [selecionado, setSelecionado] = useState(null);
+  const [autenticado, setAutenticado] = useState(temToken());
+  const [medico, setMedico] = useState(null);
 
   const carregar = useCallback(() => {
     api
@@ -385,7 +426,28 @@ export default function App() {
 
   useEffect(() => {
     carregar();
+    // Polling leve: reflete exames novos e o status assíncrono (aguardando ->
+    // rascunho_pronto) sem o médico precisar recarregar a página.
+    const t = setInterval(carregar, 4000);
+    return () => clearInterval(t);
   }, [carregar]);
+
+  if (!autenticado) {
+    return (
+      <Login
+        onEntrar={(m) => {
+          setMedico(m);
+          setAutenticado(true);
+        }}
+      />
+    );
+  }
+
+  const sair = () => {
+    setToken(null);
+    setAutenticado(false);
+    setMedico(null);
+  };
 
   const enviar = async (e) => {
     const arquivo = e.target.files?.[0];
@@ -406,10 +468,14 @@ export default function App() {
           MedLaudo<span>·AI</span>
           <small>Assistente de laudo — Raio-X de tórax</small>
         </div>
-        <label className="btn btn-primario upload">
-          + Enviar DICOM
-          <input type="file" accept=".dcm,application/dicom" onChange={enviar} hidden />
-        </label>
+        <div className="topo-dir">
+          {medico && <span className="medico-nome">{medico.nome}</span>}
+          <label className="btn btn-primario upload">
+            + Enviar DICOM
+            <input type="file" accept=".dcm,application/dicom" onChange={enviar} hidden />
+          </label>
+          <button className="btn btn-secundario" onClick={sair}>Sair</button>
+        </div>
       </header>
 
       {!online && <StatusOffline />}

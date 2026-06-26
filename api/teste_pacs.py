@@ -11,6 +11,7 @@ import os
 
 os.environ["DATABASE_URL"] = "sqlite:///./teste_pacs.db"
 os.environ.pop("MEDGEMMA_BASE_URL", None)
+os.environ["INFERENCIA_SINCRONA"] = "1"
 # Aponta o envio para o SCP local que vamos subir.
 os.environ["PACS_ENVIO_AUTO"] = "1"
 os.environ["PACS_HOST"] = "127.0.0.1"
@@ -77,6 +78,17 @@ def main():
         init_db()
         cli = TestClient(app)
 
+        # Médico autenticado.
+        import uuid as _uuid
+        from app.auth.seguranca import hash_senha
+        from app.db import Medico, SessionLocal
+        _db = SessionLocal()
+        _db.add(Medico(id=str(_uuid.uuid4()), nome="Dr. Teste", email="t@c.com",
+                       crm="0-RS", senha_hash=hash_senha("x")))
+        _db.commit(); _db.close()
+        token = cli.post("/auth/login", json={"email": "t@c.com", "senha": "x"}).json()["token"]
+        auth = {"Authorization": f"Bearer {token}"}
+
         dcm = dicom_sintetico()
         study_uid = str(pydicom.dcmread(io.BytesIO(dcm)).StudyInstanceUID)
 
@@ -85,7 +97,7 @@ def main():
         ).json()["id"]
 
         # Assina -> deve disparar C-STORE automático para o SCP.
-        r = cli.post(f"/exames/{exame_id}/assinar?medico=Dr.%20Teste").json()
+        r = cli.post(f"/exames/{exame_id}/assinar", headers=auth).json()
         print("1. Resposta da assinatura, bloco pacs:", r["pacs"])
         assert r["pacs"] and r["pacs"]["ok"], "envio automático deveria ter dado certo"
 
@@ -97,7 +109,7 @@ def main():
         print(f"2. SCP recebeu Encapsulated PDF no estudo correto ({len(recebidos)} objeto)")
 
         # Reenvio manual também funciona.
-        rr = cli.post(f"/exames/{exame_id}/enviar-pacs").json()
+        rr = cli.post(f"/exames/{exame_id}/enviar-pacs", headers=auth).json()
         assert rr["ok"]
         assert len(recebidos) == 2
         print("3. Reenvio manual OK, SCP agora com", len(recebidos), "objetos")
@@ -107,7 +119,7 @@ def main():
         eid = cli.post(
             "/exames", files={"arquivo": ("ex.dcm", dicom_sintetico(), "application/dicom")}
         ).json()["id"]
-        r2 = cli.post(f"/exames/{eid}/assinar?medico=Dr.%20Teste").json()
+        r2 = cli.post(f"/exames/{eid}/assinar", headers=auth).json()
         assert r2["ok"] is True, "assinatura deve suceder mesmo com PACS fora"
         assert r2["pacs"]["ok"] is False, "envio deve reportar falha"
         print("4. PACS fora do ar: assinatura OK, envio reportou falha (best-effort)")
